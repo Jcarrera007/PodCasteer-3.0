@@ -107,7 +107,7 @@ Stays on main camera normally, but switches to reaction camera when someone says
 
 ```
 Scene
-├── [✓] Camera 1    (Zekki - Main)
+├── [✓] Camera 1    (Jimmy - Main)
 ├── [ ] Camera 2    (Guest 1)
 ├── [ ] Camera 3    (Guest 2)
 └── [ ] Reaction Cam (Close-up)
@@ -116,7 +116,7 @@ Scene
 In PodCasteer, enter: `Camera 1, Camera 2, Camera 3, Reaction Cam`
 
 Register speakers and assign cameras:
-- Zekki → Camera 1
+- Jimmy → Camera 1
 - Guest 1 → Camera 2
 - Guest 2 → Camera 3
 
@@ -201,4 +201,4 @@ Set minimum time between camera switches to avoid rapid switching:
 
 Built for streamers by streamers 🎮
 
-**Zekki** - Now with AI! 🤖
+**PodCasteer** - Now with AI! 🤖
