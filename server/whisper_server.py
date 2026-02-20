@@ -320,7 +320,7 @@ class PodCasteerServer:
         print(f"Using device: {device}")
         self.whisper = WhisperProcessor(model_size=model_size, device=device)
     
-    async def handle_client(self, websocket: WebSocketServerProtocol, path: str):
+    async def handle_client(self, websocket: WebSocketServerProtocol):
         """Handle WebSocket client connections"""
         self.clients.add(websocket)
         print(f"Client connected: {websocket.remote_address}")
