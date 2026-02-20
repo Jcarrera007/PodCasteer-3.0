@@ -1,0 +1,22 @@
+{
+  "obs": {
+    "websocketUrl": "ws://localhost:4455",
+    "password": "",
+    "sceneName": "Scene"
+  },
+  "cameras": [
+    "Camera 1",
+    "Camera 2",
+    "Camera 3"
+  ],
+  "audio": {
+    "threshold": 30,
+    "holdTime": 3,
+    "cooldownTime": 1
+  },
+  "ai": {
+    "defaultMode": "manual",
+    "voiceActivitySensitivity": 0.7,
+    "reactionThreshold": 55
+  }
+}

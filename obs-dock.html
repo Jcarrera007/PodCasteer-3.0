@@ -1,0 +1,302 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>AI Camera Switcher - OBS Dock</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+      background: #2d2d2d;
+      color: #fff;
+      padding: 12px;
+      min-width: 300px;
+    }
+    .compact-header {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 12px;
+    }
+    .compact-header h1 {
+      font-size: 1rem;
+      color: #00d4ff;
+    }
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #ff4444;
+    }
+    .status-dot.connected { background: #00ff64; }
+    
+    .meter-compact {
+      height: 60px;
+      background: #1a1a1a;
+      border-radius: 8px;
+      position: relative;
+      overflow: hidden;
+      margin-bottom: 12px;
+    }
+    .meter-fill {
+      position: absolute;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      background: linear-gradient(to top, #00d4ff, #7b2cbf);
+      transition: height 0.05s ease-out;
+    }
+    .threshold-line {
+      position: absolute;
+      left: 0; right: 0;
+      border-top: 2px dashed #ff4444;
+      pointer-events: none;
+    }
+    
+    .camera-row {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 12px;
+    }
+    .cam-btn {
+      flex: 1;
+      padding: 12px 8px;
+      background: #333;
+      border: 2px solid #444;
+      border-radius: 6px;
+      color: #fff;
+      font-size: 0.85rem;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .cam-btn:hover { border-color: #00d4ff; }
+    .cam-btn.active {
+      background: rgba(0, 212, 255, 0.2);
+      border-color: #00d4ff;
+    }
+    
+    .controls {
+      display: flex;
+      gap: 8px;
+    }
+    .btn {
+      flex: 1;
+      padding: 10px;
+      border: none;
+      border-radius: 6px;
+      font-size: 0.85rem;
+      cursor: pointer;
+      transition: opacity 0.2s;
+    }
+    .btn:hover { opacity: 0.9; }
+    .btn-primary {
+      background: linear-gradient(90deg, #00d4ff, #7b2cbf);
+      color: #fff;
+    }
+    .btn-secondary {
+      background: #444;
+      color: #fff;
+    }
+    .btn-danger {
+      background: #ff4444;
+      color: #fff;
+    }
+    
+    .mode-select {
+      width: 100%;
+      padding: 8px;
+      background: #333;
+      border: 1px solid #444;
+      border-radius: 6px;
+      color: #fff;
+      margin-bottom: 12px;
+    }
+    
+    .threshold-control {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 12px;
+    }
+    .threshold-control input[type="range"] {
+      flex: 1;
+    }
+    .threshold-control span {
+      min-width: 40px;
+      text-align: center;
+      font-size: 0.85rem;
+    }
+    
+    .hidden { display: none; }
+  </style>
+</head>
+<body>
+  <div class="compact-header">
+    <div class="status-dot" id="statusDot"></div>
+    <h1>🎥 AI Camera Switcher</h1>
+  </div>
+  
+  <div class="meter-compact">
+    <div class="meter-fill" id="meterFill" style="height: 0%"></div>
+    <div class="threshold-line" id="thresholdLine" style="bottom: 30%"></div>
+  </div>
+  
+  <div class="threshold-control">
+    <input type="range" id="threshold" min="0" max="100" value="30">
+    <span id="thresholdVal">30%</span>
+  </div>
+  
+  <select class="mode-select" id="modeSelect">
+    <option value="manual">Manual Control</option>
+    <option value="auto">Auto Switch</option>
+    <option value="ai-vad">AI: Voice Activity</option>
+    <option value="ai-reaction">AI: Reaction Cam</option>
+  </select>
+  
+  <div class="camera-row" id="cameraRow">
+    <button class="cam-btn active" onclick="switchCam(0)">Cam 1</button>
+    <button class="cam-btn" onclick="switchCam(1)">Cam 2</button>
+  </div>
+  
+  <div class="controls">
+    <button class="btn btn-secondary" id="micBtn" onclick="toggleMic()">🎤 Start</button>
+    <button class="btn btn-primary" id="aiBtn" onclick="toggleAI()">🤖 Start AI</button>
+  </div>
+
+  <script>
+    // OBS WebSocket
+    const OBS_WS_URL = 'ws://localhost:4455';
+    let obs = null;
+    let isConnected = false;
+    let isMonitoring = false;
+    let isAIActive = false;
+    let audioContext, analyser, micStream;
+    let currentCam = 0;
+    let lastSwitch = 0;
+    
+    const cameras = ['Camera 1', 'Camera 2'];
+    
+    // Connect to OBS
+    async function connectOBS() {
+      try {
+        obs = new WebSocket(OBS_WS_URL);
+        obs.onopen = () => {
+          isConnected = true;
+          document.getElementById('statusDot').classList.add('connected');
+        };
+        obs.onclose = () => {
+          isConnected = false;
+          document.getElementById('statusDot').classList.remove('connected');
+          setTimeout(connectOBS, 3000);
+        };
+      } catch (e) {
+        setTimeout(connectOBS, 3000);
+      }
+    }
+    connectOBS();
+    
+    // Threshold slider
+    document.getElementById('threshold').addEventListener('input', (e) => {
+      document.getElementById('thresholdVal').textContent = e.target.value + '%';
+      document.getElementById('thresholdLine').style.bottom = e.target.value + '%';
+    });
+    
+    // Toggle microphone
+    async function toggleMic() {
+      const btn = document.getElementById('micBtn');
+      if (isMonitoring) {
+        stopMic();
+        btn.textContent = '🎤 Start';
+        btn.className = 'btn btn-secondary';
+      } else {
+        await startMic();
+        btn.textContent = '🎤 Stop';
+        btn.className = 'btn btn-danger';
+      }
+    }
+    
+    async function startMic() {
+      micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      audioContext = new AudioContext();
+      analyser = audioContext.createAnalyser();
+      analyser.fftSize = 256;
+      const source = audioContext.createMediaStreamSource(micStream);
+      source.connect(analyser);
+      isMonitoring = true;
+      visualize();
+    }
+    
+    function stopMic() {
+      isMonitoring = false;
+      micStream?.getTracks().forEach(t => t.stop());
+      audioContext?.close();
+    }
+    
+    function visualize() {
+      if (!isMonitoring) return;
+      const data = new Uint8Array(analyser.frequencyBinCount);
+      analyser.getByteFrequencyData(data);
+      const avg = data.reduce((a,b) => a+b) / data.length;
+      const level = (avg / 255) * 100;
+      document.getElementById('meterFill').style.height = level + '%';
+      
+      if (isAIActive) processAI(level);
+      requestAnimationFrame(visualize);
+    }
+    
+    // Toggle AI
+    function toggleAI() {
+      const btn = document.getElementById('aiBtn');
+      isAIActive = !isAIActive;
+      btn.textContent = isAIActive ? '🛑 Stop AI' : '🤖 Start AI';
+      btn.className = isAIActive ? 'btn btn-danger' : 'btn btn-primary';
+    }
+    
+    function processAI(level) {
+      const threshold = parseInt(document.getElementById('threshold').value);
+      const mode = document.getElementById('modeSelect').value;
+      const now = Date.now();
+      
+      if (now - lastSwitch < 1000) return;
+      
+      if (mode === 'auto' && level > threshold) {
+        switchCam((currentCam + 1) % cameras.length);
+      } else if (mode === 'ai-vad' && level > threshold && Math.random() > 0.7) {
+        const next = Math.floor(Math.random() * cameras.length);
+        if (next !== currentCam) switchCam(next);
+      } else if (mode === 'ai-reaction' && level > threshold + 25) {
+        switchCam(cameras.length - 1);
+        setTimeout(() => switchCam(0), 3000);
+      }
+    }
+    
+    // Switch camera
+    async function switchCam(index) {
+      currentCam = index;
+      lastSwitch = Date.now();
+      
+      // Update UI
+      document.querySelectorAll('.cam-btn').forEach((btn, i) => {
+        btn.classList.toggle('active', i === index);
+      });
+      
+      // Send to OBS
+      if (isConnected && obs.readyState === WebSocket.OPEN) {
+        const msg = {
+          op: 6,
+          d: {
+            requestType: 'SetSceneItemEnabled',
+            requestId: crypto.randomUUID(),
+            requestData: {
+              sceneName: 'Scene',
+              sceneItemId: cameras[index],
+              sceneItemEnabled: true
+            }
+          }
+        };
+        obs.send(JSON.stringify(msg));
+      }
+    }
+  </script>
+</body>
+</html>

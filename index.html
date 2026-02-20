@@ -1,0 +1,872 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>🎙️ PodCasteer - AI Camera Switcher</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: linear-gradient(135deg, #0f0f0f 0%, #1a1a2e 100%);
+      color: #fff;
+      min-height: 100vh;
+      padding: 20px;
+    }
+    .container { max-width: 1400px; margin: 0 auto; }
+    header { text-align: center; margin-bottom: 30px; }
+    h1 { font-size: 2.5rem; background: linear-gradient(90deg, #00d4ff, #7b2cbf); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+    .subtitle { color: #888; margin-top: 8px; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(350px, 1fr)); gap: 20px; }
+    .card {
+      background: rgba(26, 26, 26, 0.8);
+      border-radius: 16px;
+      padding: 24px;
+      border: 1px solid #333;
+      transition: all 0.3s;
+      backdrop-filter: blur(10px);
+    }
+    .card:hover { border-color: #555; box-shadow: 0 8px 32px rgba(0, 212, 255, 0.1); }
+    .card h2 { font-size: 1.2rem; margin-bottom: 16px; color: #00d4ff; display: flex; align-items: center; gap: 8px; }
+    .card h2 .icon { font-size: 1.4rem; }
+    .input-group { margin-bottom: 16px; }
+    label { display: block; margin-bottom: 6px; font-size: 0.9rem; color: #aaa; }
+    input, select {
+      width: 100%;
+      padding: 12px 16px;
+      background: #0f0f0f;
+      border: 1px solid #333;
+      border-radius: 8px;
+      color: #fff;
+      font-size: 1rem;
+    }
+    input:focus, select:focus { outline: none; border-color: #00d4ff; }
+    button {
+      padding: 12px 24px;
+      background: linear-gradient(90deg, #00d4ff, #7b2cbf);
+      border: none;
+      border-radius: 8px;
+      color: #fff;
+      font-size: 1rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.3s;
+    }
+    button:hover { opacity: 0.9; transform: translateY(-2px); }
+    button:active { transform: scale(0.98); }
+    button:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+    .btn-secondary { background: #333; }
+    .btn-secondary:hover { background: #444; }
+    .btn-danger { background: linear-gradient(90deg, #ff4444, #cc0000); }
+    .btn-success { background: linear-gradient(90deg, #00ff64, #00cc50); }
+    .status {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 16px;
+      border-radius: 20px;
+      font-size: 0.85rem;
+      font-weight: 500;
+    }
+    .status.online { background: rgba(0, 255, 100, 0.1); color: #00ff64; }
+    .status.offline { background: rgba(255, 68, 68, 0.1); color: #ff4444; }
+    .status-dot { width: 8px; height: 8px; border-radius: 50%; background: currentColor; }
+    .meter {
+      height: 150px;
+      background: #0f0f0f;
+      border-radius: 12px;
+      position: relative;
+      overflow: hidden;
+      margin: 16px 0;
+    }
+    .meter-fill {
+      position: absolute;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      background: linear-gradient(to top, #00d4ff, #7b2cbf);
+      transition: height 0.05s ease-out;
+      border-radius: 0 0 12px 12px;
+    }
+    .threshold-line {
+      position: absolute;
+      left: 0; right: 0;
+      border-top: 2px dashed #ff4444;
+      pointer-events: none;
+    }
+    .meter-markers {
+      position: absolute;
+      top: 0; left: 0; right: 0; bottom: 0;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      padding: 10px;
+      pointer-events: none;
+    }
+    .marker { font-size: 0.7rem; color: #555; text-align: right; }
+    .camera-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 12px;
+      margin-top: 16px;
+    }
+    .camera-btn {
+      aspect-ratio: 16/9;
+      background: #0f0f0f;
+      border: 2px solid #333;
+      border-radius: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1rem;
+      cursor: pointer;
+      transition: all 0.3s;
+    }
+    .camera-btn:hover { border-color: #00d4ff; }
+    .camera-btn.active {
+      border-color: #00d4ff;
+      background: rgba(0, 212, 255, 0.1);
+      box-shadow: 0 0 20px rgba(0, 212, 255, 0.3);
+    }
+    .log {
+      background: #0f0f0f;
+      border-radius: 12px;
+      padding: 16px;
+      font-family: 'Courier New', monospace;
+      font-size: 0.8rem;
+      max-height: 200px;
+      overflow-y: auto;
+    }
+    .log-entry { margin-bottom: 4px; color: #888; }
+    .log-entry.info { color: #00d4ff; }
+    .log-entry.success { color: #00ff64; }
+    .log-entry.error { color: #ff4444; }
+    .log-entry.whisper { color: #ff00ff; }
+    .slider-container { display: flex; align-items: center; gap: 12px; margin-top: 12px; }
+    input[type="range"] { flex: 1; }
+    .slider-value { min-width: 50px; text-align: center; font-weight: 600; }
+    .switch-mode { display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; }
+    .switch-mode button { flex: 1; font-size: 0.9rem; min-width: 100px; }
+    .switch-mode button.active { box-shadow: 0 0 0 2px #00d4ff; }
+    
+    /* Transcription Panel */
+    .transcription-box {
+      background: #0f0f0f;
+      border-radius: 12px;
+      padding: 16px;
+      max-height: 300px;
+      overflow-y: auto;
+      font-size: 0.9rem;
+    }
+    .transcript-entry {
+      margin-bottom: 12px;
+      padding: 8px 12px;
+      background: rgba(255,255,255,0.05);
+      border-radius: 8px;
+      border-left: 3px solid #00d4ff;
+    }
+    .transcript-entry .speaker {
+      font-weight: 600;
+      color: #00d4ff;
+      font-size: 0.8rem;
+      text-transform: uppercase;
+    }
+    .transcript-entry .text { margin-top: 4px; }
+    .transcript-entry .meta {
+      font-size: 0.7rem;
+      color: #666;
+      margin-top: 4px;
+    }
+    
+    /* Speaker Setup */
+    .speaker-list { margin-top: 16px; }
+    .speaker-item {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 12px;
+      background: #0f0f0f;
+      border-radius: 8px;
+      margin-bottom: 8px;
+    }
+    .speaker-item .name { flex: 1; }
+    .speaker-item .camera { color: #888; font-size: 0.85rem; }
+    .speaker-item.calibrated { border-left: 3px solid #00ff64; }
+    .speaker-item.pending { border-left: 3px solid #ffaa00; }
+    
+    /* Recording Animation */
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.5; }
+    }
+    .recording { animation: pulse 1s infinite; }
+    .recording-dot {
+      width: 12px;
+      height: 12px;
+      background: #ff4444;
+      border-radius: 50%;
+      display: inline-block;
+    }
+    
+    /* Connection status */
+    .connection-bar {
+      display: flex;
+      gap: 20px;
+      justify-content: center;
+      margin-bottom: 20px;
+      flex-wrap: wrap;
+    }
+    .connection-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 16px;
+      background: rgba(255,255,255,0.05);
+      border-radius: 20px;
+    }
+    
+    /* Whisper Status */
+    .whisper-status {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 12px;
+      background: rgba(255,0,255,0.1);
+      border-radius: 8px;
+      margin-bottom: 12px;
+    }
+    .whisper-status.ready { background: rgba(0,255,100,0.1); color: #00ff64; }
+    .whisper-status.processing { background: rgba(255,0,255,0.1); color: #ff00ff; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>🎙️ PodCasteer</h1>
+      <p class="subtitle">AI-Powered Camera Switching with Whisper Speech Recognition</p>
+      
+      <div class="connection-bar">
+        <div class="connection-item">
+          <span>🔌 Server:</span>
+          <span id="serverStatus" class="status offline"><span class="status-dot"></span>Disconnected</span>
+        </div>
+        <div class="connection-item">
+          <span>📺 OBS:</span>
+          <span id="obsStatus" class="status offline"><span class="status-dot"></span>Disconnected</span>
+        </div>
+        <div class="connection-item">
+          <span>🧠 Whisper:</span>
+          <span id="whisperStatus" class="whisper-status"><span class="status-dot"></span>Loading...</span>
+        </div>
+      </div>
+    </header>
+
+    <div class="grid">
+      <!-- Server Connection -->
+      <div class="card">
+        <h2><span class="icon">⚡</span>Server Connection</h2>
+        <div class="input-group">
+          <label>Whisper Server URL</label>
+          <input type="text" id="serverUrl" value="ws://localhost:8765" placeholder="ws://localhost:8765">
+        </div>
+        <div style="display: flex; gap: 12px;">
+          <button id="connectServerBtn" onclick="toggleServerConnection()">Connect to Server</button>
+          <button id="startWhisperBtn" onclick="toggleWhisper()" class="btn-secondary" disabled>Start Whisper</button>
+        </div>
+      </div>
+
+      <!-- OBS Connection -->
+      <div class="card">
+        <h2><span class="icon">📺</span>OBS Connection</h2>
+        <div class="input-group">
+          <label>OBS WebSocket URL</label>
+          <input type="text" id="obsUrl" value="ws://localhost:4455" placeholder="ws://localhost:4455">
+        </div>
+        <div class="input-group">
+          <label>Password (optional)</label>
+          <input type="password" id="obsPassword" placeholder="Leave blank if no password">
+        </div>
+        <button id="connectObsBtn" onclick="toggleOBSConnection()" disabled>Connect OBS</button>
+      </div>
+
+      <!-- Camera Sources -->
+      <div class="card">
+        <h2><span class="icon">📹</span>Camera Sources</h2>
+        <div class="input-group">
+          <label>OBS Scene Name</label>
+          <input type="text" id="sceneName" value="Scene" placeholder="Scene">
+        </div>
+        <div class="input-group">
+          <label>Camera Source Names (comma-separated)</label>
+          <input type="text" id="cameraSources" value="Camera 1, Camera 2, Camera 3" placeholder="Camera 1, Camera 2, Camera 3">
+        </div>
+        <div class="camera-grid" id="cameraGrid"></div>
+      </div>
+
+      <!-- Speaker Setup -->
+      <div class="card">
+        <h2><span class="icon">👥</span>Speaker Setup</h2>
+        <p style="color: #888; font-size: 0.85rem; margin-bottom: 16px;">
+          Register speakers and assign cameras. Calibrate each speaker by recording a voice sample.
+        </p>
+        
+        <div class="input-group">
+          <label>Speaker Name</label>
+          <input type="text" id="speakerName" placeholder="e.g., Zekki">
+        </div>
+        <div class="input-group">
+          <label>Assigned Camera</label>
+          <select id="speakerCamera">
+            <option value="0">Camera 1</option>
+            <option value="1">Camera 2</option>
+            <option value="2">Camera 3</option>
+            <option value="3">Camera 4</option>
+          </select>
+        </div>
+        <div style="display: flex; gap: 12px;">
+          <button onclick="registerSpeaker()" class="btn-secondary">Add Speaker</button>
+          <button id="calibrateBtn" onclick="calibrateSpeaker()" class="btn-success" disabled>🎤 Calibrate</button>
+        </div>
+        
+        <div class="speaker-list" id="speakerList"></div>
+      </div>
+
+      <!-- AI Control -->
+      <div class="card">
+        <h2><span class="icon">🤖</span>AI Control</h2>
+        
+        <div class="switch-mode">
+          <button id="modeManual" class="active" onclick="setMode('manual')">Manual</button>
+          <button id="modeAI" onclick="setMode('ai')">AI Smart</button>
+        </div>
+
+        <div id="aiSettings" style="display: none;">
+          <div class="input-group">
+            <label>AI Mode</label>
+            <select id="aiMode" onchange="updateAIMode()">
+              <option value="speaker-focus">Speaker Focus (Follow Speaker)</option>
+              <option value="voice-activity">Voice Activity (Dynamic)</option>
+              <option value="reaction-cam">Reaction Detection</option>
+            </select>
+          </div>
+          <div class="input-group">
+            <label>Switch Cooldown (seconds)</label>
+            <input type="number" id="cooldownTime" value="2" min="0.5" max="10" step="0.5">
+          </div>
+        </div>
+
+        <button id="startBtn" onclick="toggleSwitcher()" class="btn-danger" disabled>Start AI Switcher</button>
+      </div>
+
+      <!-- Live Transcription -->
+      <div class="card" style="grid-column: span 2;">
+        <h2><span class="icon">📝</span>Live Transcription</h2>
+        <div class="transcription-box" id="transcriptionBox">
+          <div style="color: #666; text-align: center; padding: 40px;">
+            Start Whisper to see live transcription...
+          </div>
+        </div>
+      </div>
+
+      <!-- Activity Log -->
+      <div class="card" style="grid-column: span 2;">
+        <h2><span class="icon">📋</span>Activity Log</h2>
+        <div class="log" id="logContainer">
+          <div class="log-entry">Ready to connect...</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // State
+    let ws = null;
+    let audioContext = null;
+    let mediaStream = null;
+    let audioWorklet = null;
+    let isWhisperRunning = false;
+    let isSwitcherRunning = false;
+    let currentMode = 'manual';
+    let cameras = [];
+    let speakers = [];
+    let calibratingSpeakerId = null;
+    let calibrationAudio = [];
+    
+    // DOM Elements
+    const serverUrl = document.getElementById('serverUrl');
+    const obsUrl = document.getElementById('obsUrl');
+    const obsPassword = document.getElementById('obsPassword');
+    const serverStatus = document.getElementById('serverStatus');
+    const obsStatus = document.getElementById('obsStatus');
+    const whisperStatus = document.getElementById('whisperStatus');
+    const connectServerBtn = document.getElementById('connectServerBtn');
+    const connectObsBtn = document.getElementById('connectObsBtn');
+    const startWhisperBtn = document.getElementById('startWhisperBtn');
+    const startBtn = document.getElementById('startBtn');
+    const cameraGrid = document.getElementById('cameraGrid');
+    const speakerList = document.getElementById('speakerList');
+    const transcriptionBox = document.getElementById('transcriptionBox');
+    const logContainer = document.getElementById('logContainer');
+
+    // Initialize
+    document.addEventListener('DOMContentLoaded', () => {
+      refreshCameras();
+    });
+
+    // Logging
+    function log(message, type = 'info') {
+      const entry = document.createElement('div');
+      entry.className = `log-entry ${type}`;
+      entry.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
+      logContainer.insertBefore(entry, logContainer.firstChild);
+      if (logContainer.children.length > 50) {
+        logContainer.removeChild(logContainer.lastChild);
+      }
+    }
+
+    // Server Connection
+    async function toggleServerConnection() {
+      if (ws) {
+        disconnectServer();
+      } else {
+        await connectServer();
+      }
+    }
+
+    async function connectServer() {
+      try {
+        log('Connecting to Whisper server...');
+        ws = new WebSocket(serverUrl.value);
+        
+        ws.onopen = () => {
+          log('Connected to Whisper server', 'success');
+          serverStatus.className = 'status online';
+          serverStatus.innerHTML = '<span class="status-dot"></span>Connected';
+          connectServerBtn.textContent = 'Disconnect';
+          startWhisperBtn.disabled = false;
+          connectObsBtn.disabled = false;
+          updateWhisperStatus('ready');
+        };
+        
+        ws.onclose = () => {
+          log('Disconnected from server');
+          serverStatus.className = 'status offline';
+          serverStatus.innerHTML = '<span class="status-dot"></span>Disconnected';
+          connectServerBtn.textContent = 'Connect to Server';
+          startWhisperBtn.disabled = true;
+          connectObsBtn.disabled = true;
+          startBtn.disabled = true;
+          updateWhisperStatus('offline');
+          ws = null;
+          stopWhisper();
+        };
+        
+        ws.onerror = (err) => {
+          log('Server connection error', 'error');
+        };
+        
+        ws.onmessage = (event) => {
+          const data = JSON.parse(event.data);
+          handleServerMessage(data);
+        };
+      } catch (err) {
+        log('Failed to connect: ' + err.message, 'error');
+      }
+    }
+
+    function disconnectServer() {
+      if (ws) {
+        ws.close();
+      }
+    }
+
+    function handleServerMessage(data) {
+      switch (data.type) {
+        case 'transcription':
+          addTranscription(data);
+          break;
+        case 'camera_switched':
+          log(`AI switched to Camera ${data.camera + 1} (${data.reason})`, 'success');
+          highlightCamera(data.camera);
+          break;
+        case 'obs_status':
+          if (data.connected) {
+            obsStatus.className = 'status online';
+            obsStatus.innerHTML = '<span class="status-dot"></span>Connected';
+            connectObsBtn.textContent = 'Disconnect OBS';
+            startBtn.disabled = false;
+          }
+          break;
+        case 'speaker_registered':
+          log(`Speaker registered: ${data.name} -> Camera ${data.camera + 1}`, 'success');
+          addSpeakerToList(data);
+          break;
+        case 'speaker_calibrated':
+          log(`Speaker calibrated: ${data.speaker_id}`, 'success');
+          updateSpeakerCalibrated(data.speaker_id);
+          break;
+        case 'mode_changed':
+          log(`Mode changed to ${data.mode}`, 'info');
+          break;
+        case 'error':
+          log('Error: ' + data.message, 'error');
+          break;
+      }
+    }
+
+    // OBS Connection
+    function toggleOBSConnection() {
+      if (obsStatus.classList.contains('online')) {
+        disconnectOBS();
+      } else {
+        connectOBS();
+      }
+    }
+
+    function connectOBS() {
+      if (!ws) return;
+      
+      const obsHost = new URL(obsUrl.value).hostname;
+      const obsPort = new URL(obsUrl.value).port || 4455;
+      
+      ws.send(JSON.stringify({
+        type: 'obs_connect',
+        host: obsHost,
+        port: parseInt(obsPort),
+        password: obsPassword.value
+      }));
+      
+      // Also send camera config
+      ws.send(JSON.stringify({
+        type: 'config',
+        scene_name: document.getElementById('sceneName').value,
+        camera_sources: cameras
+      }));
+    }
+
+    function disconnectOBS() {
+      obsStatus.className = 'status offline';
+      obsStatus.innerHTML = '<span class="status-dot"></span>Disconnected';
+      connectObsBtn.textContent = 'Connect OBS';
+      startBtn.disabled = true;
+    }
+
+    // Whisper Control
+    async function toggleWhisper() {
+      if (isWhisperRunning) {
+        stopWhisper();
+      } else {
+        await startWhisper();
+      }
+    }
+
+    async function startWhisper() {
+      try {
+        // Get microphone
+        mediaStream = await navigator.mediaDevices.getUserMedia({
+          audio: {
+            sampleRate: 16000,
+            channelCount: 1,
+            echoCancellation: true,
+            noiseSuppression: true
+          }
+        });
+        
+        // Set up audio context
+        audioContext = new AudioContext({ sampleRate: 16000 });
+        const source = audioContext.createMediaStreamSource(mediaStream);
+        
+        // Create script processor for raw audio
+        const processor = audioContext.createScriptProcessor(4096, 1, 1);
+        
+        processor.onaudioprocess = (e) => {
+          if (!isWhisperRunning || !ws) return;
+          
+          const inputData = e.inputBuffer.getChannelData(0);
+          
+          // Convert to 16-bit PCM
+          const pcmData = new Int16Array(inputData.length);
+          for (let i = 0; i < inputData.length; i++) {
+            pcmData[i] = Math.max(-1, Math.min(1, inputData[i])) * 0x7FFF;
+          }
+          
+          // Handle calibration
+          if (calibratingSpeakerId) {
+            calibrationAudio.push(...pcmData);
+          }
+          
+          // Send to server
+          ws.send(JSON.stringify({
+            type: 'audio_chunk',
+            data: Array.from(pcmData)
+          }));
+        };
+        
+        source.connect(processor);
+        processor.connect(audioContext.destination);
+        audioWorklet = processor;
+        
+        isWhisperRunning = true;
+        startWhisperBtn.textContent = 'Stop Whisper';
+        startWhisperBtn.classList.remove('btn-secondary');
+        startWhisperBtn.classList.add('btn-danger');
+        updateWhisperStatus('processing');
+        log('Whisper transcription started', 'success');
+        
+      } catch (err) {
+        log('Failed to start microphone: ' + err.message, 'error');
+      }
+    }
+
+    function stopWhisper() {
+      isWhisperRunning = false;
+      
+      if (audioWorklet) {
+        audioWorklet.disconnect();
+        audioWorklet = null;
+      }
+      
+      if (audioContext) {
+        audioContext.close();
+        audioContext = null;
+      }
+      
+      if (mediaStream) {
+        mediaStream.getTracks().forEach(t => t.stop());
+        mediaStream = null;
+      }
+      
+      startWhisperBtn.textContent = 'Start Whisper';
+      startWhisperBtn.classList.remove('btn-danger');
+      startWhisperBtn.classList.add('btn-secondary');
+      updateWhisperStatus('ready');
+      log('Whisper transcription stopped');
+    }
+
+    function updateWhisperStatus(status) {
+      if (status === 'ready') {
+        whisperStatus.className = 'whisper-status ready';
+        whisperStatus.innerHTML = '<span class="status-dot"></span>Ready';
+      } else if (status === 'processing') {
+        whisperStatus.className = 'whisper-status processing';
+        whisperStatus.innerHTML = '<span class="recording-dot"></span>Listening...';
+      } else {
+        whisperStatus.className = 'whisper-status';
+        whisperStatus.innerHTML = '<span class="status-dot"></span>Offline';
+      }
+    }
+
+    // Camera Management
+    function refreshCameras() {
+      const input = document.getElementById('cameraSources').value;
+      cameras = input.split(',').map(s => s.trim()).filter(s => s);
+      
+      cameraGrid.innerHTML = '';
+      cameras.forEach((cam, index) => {
+        const btn = document.createElement('div');
+        btn.className = 'camera-btn';
+        btn.id = `camera-${index}`;
+        btn.textContent = cam;
+        btn.onclick = () => switchToCamera(index);
+        cameraGrid.appendChild(btn);
+      });
+      
+      // Update camera select options
+      const select = document.getElementById('speakerCamera');
+      select.innerHTML = cameras.map((cam, i) => 
+        `<option value="${i}">${cam}</option>`
+      ).join('');
+    }
+
+    function highlightCamera(index) {
+      document.querySelectorAll('.camera-btn').forEach((btn, i) => {
+        btn.classList.toggle('active', i === index);
+      });
+    }
+
+    function switchToCamera(index) {
+      if (ws) {
+        ws.send(JSON.stringify({
+          type: 'switch_camera',
+          camera_index: index
+        }));
+      }
+      highlightCamera(index);
+    }
+
+    // Speaker Management
+    function registerSpeaker() {
+      const name = document.getElementById('speakerName').value.trim();
+      const cameraIndex = parseInt(document.getElementById('speakerCamera').value);
+      
+      if (!name) {
+        log('Please enter a speaker name', 'error');
+        return;
+      }
+      
+      if (!ws) {
+        log('Connect to server first', 'error');
+        return;
+      }
+      
+      ws.send(JSON.stringify({
+        type: 'register_speaker',
+        name: name,
+        camera_index: cameraIndex
+      }));
+      
+      document.getElementById('speakerName').value = '';
+    }
+
+    function addSpeakerToList(data) {
+      speakers.push({
+        id: data.speaker_id,
+        name: data.name,
+        camera: data.camera,
+        calibrated: false
+      });
+      
+      renderSpeakerList();
+      calibratingSpeakerId = data.speaker_id;
+      document.getElementById('calibrateBtn').disabled = false;
+    }
+
+    function renderSpeakerList() {
+      speakerList.innerHTML = speakers.map(s => `
+        <div class="speaker-item ${s.calibrated ? 'calibrated' : 'pending'}" data-id="${s.id}">
+          <span class="name">${s.name}</span>
+          <span class="camera">→ Camera ${s.camera + 1}</span>
+          <span class="status">${s.calibrated ? '✓ Calibrated' : '⏳ Pending'}</span>
+        </div>
+      `).join('');
+    }
+
+    async function calibrateSpeaker() {
+      if (!calibratingSpeakerId || !isWhisperRunning) {
+        log('Start Whisper and add a speaker first', 'error');
+        return;
+      }
+      
+      log('Recording 5 second voice sample... Speak now!');
+      calibrationAudio = [];
+      
+      document.getElementById('calibrateBtn').textContent = '🔴 Recording...';
+      document.getElementById('calibrateBtn').classList.add('recording');
+      
+      // Record for 5 seconds
+      await new Promise(resolve => setTimeout(resolve, 5000));
+      
+      document.getElementById('calibrateBtn').textContent = '🎤 Calibrate';
+      document.getElementById('calibrateBtn').classList.remove('recording');
+      
+      // Send calibration data
+      if (calibrationAudio.length > 0) {
+        ws.send(JSON.stringify({
+          type: 'calibrate_speaker',
+          speaker_id: calibratingSpeakerId,
+          audio_data: calibrationAudio
+        }));
+        
+        log('Calibration sample sent for processing...');
+      }
+      
+      calibratingSpeakerId = null;
+      document.getElementById('calibrateBtn').disabled = true;
+    }
+
+    function updateSpeakerCalibrated(speakerId) {
+      const speaker = speakers.find(s => s.id === speakerId);
+      if (speaker) {
+        speaker.calibrated = true;
+        renderSpeakerList();
+      }
+    }
+
+    // Transcription Display
+    function addTranscription(data) {
+      // Clear placeholder on first transcript
+      if (transcriptionBox.querySelector('.transcript-entry') === null) {
+        transcriptionBox.innerHTML = '';
+      }
+      
+      const entry = document.createElement('div');
+      entry.className = 'transcript-entry';
+      entry.innerHTML = `
+        <div class="speaker">${data.speaker}</div>
+        <div class="text">${data.text}</div>
+        <div class="meta">Confidence: ${(data.confidence * 100).toFixed(1)}% | Camera: ${data.camera + 1}</div>
+      `;
+      
+      transcriptionBox.appendChild(entry);
+      transcriptionBox.scrollTop = transcriptionBox.scrollHeight;
+      
+      // Keep only last 50 entries
+      while (transcriptionBox.children.length > 50) {
+        transcriptionBox.removeChild(transcriptionBox.firstChild);
+      }
+    }
+
+    // Mode Control
+    function setMode(mode) {
+      currentMode = mode;
+      
+      document.getElementById('modeManual').classList.toggle('active', mode === 'manual');
+      document.getElementById('modeAI').classList.toggle('active', mode === 'ai');
+      
+      document.getElementById('aiSettings').style.display = mode === 'ai' ? 'block' : 'none';
+      
+      if (ws) {
+        ws.send(JSON.stringify({
+          type: 'set_mode',
+          mode: mode,
+          ai_mode: document.getElementById('aiMode').value,
+          cooldown: parseFloat(document.getElementById('cooldownTime').value)
+        }));
+      }
+    }
+
+    function updateAIMode() {
+      if (ws && currentMode === 'ai') {
+        ws.send(JSON.stringify({
+          type: 'set_mode',
+          mode: 'ai',
+          ai_mode: document.getElementById('aiMode').value,
+          cooldown: parseFloat(document.getElementById('cooldownTime').value)
+        }));
+      }
+    }
+
+    // Switcher Control
+    function toggleSwitcher() {
+      const btn = document.getElementById('startBtn');
+      if (isSwitcherRunning) {
+        isSwitcherRunning = false;
+        btn.textContent = 'Start AI Switcher';
+        btn.classList.add('btn-danger');
+        log('AI Switcher stopped');
+      } else {
+        if (!isWhisperRunning) {
+          log('Please start Whisper first', 'error');
+          return;
+        }
+        isSwitcherRunning = true;
+        btn.textContent = 'Stop AI Switcher';
+        btn.classList.remove('btn-danger');
+        log('AI Switcher started in ' + currentMode + ' mode', 'success');
+      }
+    }
+
+    // Update camera config when changed
+    document.getElementById('cameraSources').addEventListener('change', refreshCameras);
+    document.getElementById('sceneName').addEventListener('change', () => {
+      if (ws) {
+        ws.send(JSON.stringify({
+          type: 'config',
+          scene_name: document.getElementById('sceneName').value,
+          camera_sources: cameras
+        }));
+      }
+    });
+  </script>
+</body>
+</html>

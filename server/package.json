@@ -1,0 +1,13 @@
+{
+  "name": "podcasteer-whisper-server",
+  "version": "2.0.0",
+  "description": "PodCasteer Whisper Server - AI-powered camera switching with real-time speech recognition",
+  "scripts": {
+    "start": "python whisper_server.py",
+    "setup": "pip install -r requirements.txt",
+    "dev": "python whisper_server.py"
+  },
+  "keywords": ["obs", "whisper", "ai", "camera-switching", "streaming"],
+  "author": "Zekki",
+  "license": "MIT"
+}
