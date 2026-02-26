@@ -13,6 +13,7 @@ import tempfile
 import time
 from collections import deque
 from typing import Dict, List, Optional, Tuple
+import uuid
 import numpy as np
 import websockets
 from websockets.server import WebSocketServerProtocol
@@ -235,15 +236,42 @@ class OBSSwitcher:
         self.connected = False
     
     def connect(self, host: str = "localhost", port: int = 4455, password: str = ""):
-        """Connect to OBS WebSocket"""
+        """Connect to OBS WebSocket.
+
+        Supports plain host/port (e.g. "localhost", 4455) and ngrok-style
+        addresses like "tcp://8.tcp.ngrok.io:15244" passed in the host field.
+        """
+        # Normalize ngrok-style addresses the user might paste
+        raw_host = str(host)
+        raw_port = port
+
+        # If user passed a full tcp URL like "tcp://host:port", parse it
+        if raw_host.startswith("tcp://"):
+            without_scheme = raw_host[len("tcp://"):]
+            if ":" in without_scheme:
+                host_part, port_part = without_scheme.split(":", 1)
+                raw_host = host_part
+                try:
+                    raw_port = int(port_part)
+                except ValueError:
+                    pass
+            else:
+                raw_host = without_scheme
+
+        # Ensure port is an int in case it came as a string
         try:
-            self.ws = obsws(host, port, password)
+            raw_port = int(raw_port)
+        except (TypeError, ValueError):
+            raw_port = 4455
+
+        try:
+            self.ws = obsws(raw_host, raw_port, password)
             self.ws.connect()
             self.connected = True
-            print(f"Connected to OBS at {host}:{port}")
+            print(f"Connected to OBS at {raw_host}:{raw_port}")
             return True
         except Exception as e:
-            print(f"Failed to connect to OBS: {e}")
+            print(f"Failed to connect to OBS at {raw_host}:{raw_port}: {e}")
             self.connected = False
             return False
     
@@ -298,6 +326,11 @@ class PodCasteerServer:
         self.whisper = None
         self.obs = OBSSwitcher()
         self.clients: set[WebSocketServerProtocol] = set()
+
+        # Optional remote-control agent running on the OBS machine.
+        # If connected, OBS-related commands are relayed to the agent.
+        self.obs_agent: Optional[WebSocketServerProtocol] = None
+        self._pending_agent_requests: dict[str, WebSocketServerProtocol] = {}
         
         # Audio buffer for streaming (3 seconds at 16kHz, 16-bit)
         self.audio_buffer = bytearray()
@@ -332,6 +365,9 @@ class PodCasteerServer:
             pass
         finally:
             self.clients.discard(websocket)
+            if websocket == self.obs_agent:
+                self.obs_agent = None
+                print("OBS agent disconnected")
             print(f"Client disconnected: {websocket.remote_address}")
     
     async def handle_message(self, websocket: WebSocketServerProtocol, message):
@@ -339,6 +375,24 @@ class PodCasteerServer:
         try:
             data = json.loads(message)
             msg_type = data.get("type")
+
+            # Remote-control agent registration.
+            if msg_type == "register_obs_agent":
+                self.obs_agent = websocket
+                print(f"OBS agent registered from {websocket.remote_address}")
+                await self.send_to_client(websocket, {"type": "obs_agent_status", "connected": True})
+                return
+
+            # Agent responses are routed back to the requesting client.
+            if msg_type == "obs_status" and "request_id" in data and websocket == self.obs_agent:
+                request_id = str(data.get("request_id"))
+                requester = self._pending_agent_requests.pop(request_id, None)
+                if requester:
+                    await self.send_to_client(requester, data)
+                else:
+                    # If we can't find a requester, broadcast to keep UI in sync.
+                    await self.broadcast(data)
+                return
             
             if msg_type == "audio_chunk":
                 # Receive audio data
@@ -346,15 +400,27 @@ class PodCasteerServer:
                 await self.process_audio_chunk(audio_bytes)
                 
             elif msg_type == "obs_connect":
-                success = self.obs.connect(
-                    data.get("host", "localhost"),
-                    data.get("port", 4455),
-                    data.get("password", "")
-                )
-                await self.send_to_client(websocket, {
-                    "type": "obs_status",
-                    "connected": success
-                })
+                # If an OBS agent is connected (running on OBS machine), relay.
+                if self.obs_agent and self.obs_agent in self.clients:
+                    request_id = uuid.uuid4().hex
+                    self._pending_agent_requests[request_id] = websocket
+                    await self.send_to_client(self.obs_agent, {
+                        "type": "obs_connect",
+                        "request_id": request_id,
+                        "host": data.get("host", "localhost"),
+                        "port": data.get("port", 4455),
+                        "password": data.get("password", "")
+                    })
+                else:
+                    success = self.obs.connect(
+                        data.get("host", "localhost"),
+                        data.get("port", 4455),
+                        data.get("password", "")
+                    )
+                    await self.send_to_client(websocket, {
+                        "type": "obs_status",
+                        "connected": success
+                    })
                 
             elif msg_type == "register_speaker":
                 speaker_id = self.whisper.add_speaker(
@@ -376,7 +442,13 @@ class PodCasteerServer:
                 })
                 
             elif msg_type == "switch_camera":
-                self.obs.switch_to_camera(data["camera_index"])
+                if self.obs_agent and self.obs_agent in self.clients:
+                    await self.send_to_client(self.obs_agent, {
+                        "type": "switch_camera",
+                        "camera_index": data["camera_index"],
+                    })
+                else:
+                    self.obs.switch_to_camera(data["camera_index"])
                 
             elif msg_type == "set_mode":
                 self.mode = data["mode"]
@@ -390,10 +462,16 @@ class PodCasteerServer:
                 })
                 
             elif msg_type == "config":
-                if "scene_name" in data:
-                    self.obs.set_scene_name(data["scene_name"])
-                if "camera_sources" in data:
-                    self.obs.set_camera_sources(data["camera_sources"])
+                if self.obs_agent and self.obs_agent in self.clients:
+                    await self.send_to_client(self.obs_agent, {
+                        "type": "config",
+                        **{k: data[k] for k in ("scene_name", "camera_sources") if k in data},
+                    })
+                else:
+                    if "scene_name" in data:
+                        self.obs.set_scene_name(data["scene_name"])
+                    if "camera_sources" in data:
+                        self.obs.set_camera_sources(data["camera_sources"])
                     
         except Exception as e:
             print(f"Error handling message: {e}")
@@ -524,13 +602,36 @@ class PodCasteerServer:
             ], return_exceptions=True)
     
     async def start(self, host: str = "0.0.0.0", port: int = 8765):
-        """Start server"""
-        print(f"Starting PodCasteer Whisper Server on {host}:{port}")
+        """Start server.
+
+        If the port is busy (common after a crash/restart), automatically tries
+        the next ports until it finds a free one.
+        """
+        env_port = os.getenv("PODCASTEER_SERVER_PORT")
+        if env_port:
+            try:
+                port = int(env_port)
+            except ValueError:
+                pass
+
         await self.initialize_whisper()
-        
-        async with websockets.serve(self.handle_client, host, port):
-            print(f"Server running at ws://{host}:{port}")
-            await asyncio.Future()
+
+        last_error = None
+        for attempt in range(0, 20):
+            try_port = port + attempt
+            try:
+                print(f"Starting PodCasteer Whisper Server on {host}:{try_port}")
+                async with websockets.serve(self.handle_client, host, try_port):
+                    print(f"Server running at ws://{host}:{try_port}")
+                    await asyncio.Future()
+                return
+            except OSError as e:
+                last_error = e
+                if getattr(e, "errno", None) == 98:
+                    continue
+                raise
+
+        raise last_error if last_error else RuntimeError("Failed to start server")
 
 
 if __name__ == "__main__":

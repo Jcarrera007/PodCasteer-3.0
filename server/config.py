@@ -19,5 +19,5 @@ DEFAULT_COOLDOWN = 2.0  # Minimum seconds between switches
 DEFAULT_MODE = "speaker-focus"  # speaker-focus, voice-activity, reaction-cam
 
 # OBS Settings
-OBS_DEFAULT_HOST = "localhost"
-OBS_DEFAULT_PORT = 4455
+OBS_DEFAULT_HOST = "tcp://8.tcp.ngrok.io"
+OBS_DEFAULT_PORT = 15244
